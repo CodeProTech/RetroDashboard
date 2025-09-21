@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retro Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    #fullscreen-btn.fullscreen-hide {
+      display: none !important;
+    }
+    .firework {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #39ff14;
+      box-shadow: 0 0 16px #39ff14, 0 0 32px #fff;
+      animation: firework-explode 1s linear forwards;
+    }
+    @keyframes firework-explode {
+      0% { opacity: 1; transform: scale(1) translateY(0); }
+      80% { opacity: 1; }
+      100% { opacity: 0; transform: scale(1.8) translateY(-120px); }
+    }
+  </style>
+</head>
+<body>
+  <!-- CRT Scanlines & Rauschen -->
+  <div id="crt-overlay" style="pointer-events:none; position:fixed; left:0; top:0; width:100vw; height:100vh; z-index:100; mix-blend-mode:screen;">
+    <canvas id="scanlines" width="1920" height="1080" style="width:100vw; height:100vh; display:block; opacity:0.18;"></canvas>
+    <canvas id="noise" width="1920" height="1080" style="width:100vw; height:100vh; display:block; opacity:0.10; position:absolute; left:0; top:0;"></canvas>
+  </div>
+  <div id="countdown-overlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:3000;pointer-events:none;background:rgba(0,0,0,0.7);text-align:center;"></div>
+  <div id="fireworks-overlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2000;pointer-events:none;background:transparent;"></div>
+  <div class="center-time">
+    <div class="time" id="time_today">{{time_today}}</div>
+    <div class="date" id="date_today">{{short_day_name}}, {{date_today}}</div>
+  </div>
+  <div class="weather-today-row">
+    <img id="weather_icon" src="" class="icon" alt="weather icon" title="Weather Icon" style="display:none;">
+    <span class="weather-today-temp" id="temp_now">{{temp_now}}</span>
+    <span class="weather-today-desc" id="weather_now">{{weather_now}}</span>
+    <span class="weather-today-day" id="full_day_name">{{full_day_name}}, {{date_today}}</span>
+  </div>
+  <div class="system-info-title">SYSTEM INFO</div>
+  <div class="system-info-row">
+    <div class="sysinfo-block">
+      <span>CPU Temp</span>
+      <svg class="thermometer-icon" viewBox="0 0 24 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="9" y="2" width="6" height="24" rx="3" fill="#111" stroke="#39ff14" stroke-width="2"/>
+        <rect x="11" y="4" width="2" height="20" rx="1" fill="#39ff14"/>
+        <circle cx="12" cy="32" r="8" fill="#111" stroke="#39ff14" stroke-width="2"/>
+        <circle cx="12" cy="32" r="5" fill="#39ff14"/>
+      </svg>
+      <div class="cpu-temp-anim" id="cpu_temp">{{cpu_temp}}</div>
+    </div>
+    <div class="sysinfo-block">
+      <span>Uptime</span>
+      <div class="uptime-anim" id="uptime">-</div>
+    </div>
+    <div class="sysinfo-block">
+      <span>RAM Usage</span>
+      <div class="ram-usage-block">
+        <div class="ram-bar-bg">
+          <div class="ram-bar"></div>
+        </div>
+        <span class="ram-text" id="ram_use">{{ram_use}}</span>
+      </div>
+    </div>
+    <div class="sysinfo-block">
+      <span>IP Address</span>
+      <div class="ip-block">
+        <div class="ip-anim" id="ip">192.168.0.42</div>
+      </div>
+    </div>
+  </div>
+  <div class="weather-forecast-title">7-Day Forecast</div>
+  <div class="weekly-forecast" id="weekly-forecast"></div>
+  <!-- Ticker/Newsleiste -->
+  <div class="ticker-outer">
+    <span class="ticker-inner" id="ticker-text"></span>
+  </div>
+  <button id="fullscreen-btn" style="position:fixed;top:16px;right:16px;z-index:999;background:#111;border:2px solid #39ff14;color:#39ff14;font-family:'VT323',monospace;font-size:1.2rem;padding:8px 18px;border-radius:8px;cursor:pointer;box-shadow:0 0 8px #39ff14;">⛶ Fullscreen</button>
+  <script type="module" src="{{ url_for('static', filename='js/ticker.js') }}"></script>
+  <script>
+    // Zeit lokal aktualisieren
+    function updateTime() {
+      // Nutze simulierte Zeit, falls vorhanden
+      const now = window.simulatedNow ? new Date(window.simulatedNow) : new Date();
+      const daysShort = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const daysFull = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const pad = n => n.toString().padStart(2, '0');
+      const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+      const dateStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+      const timeElem = document.getElementById('time_today');
+      timeElem.textContent = timeStr;
+      document.getElementById('date_today').textContent = daysShort[now.getDay()] + ', ' + dateStr;
+      document.getElementById('full_day_name').textContent = daysFull[now.getDay()] + ', ' + dateStr;
+      // Epischer Effekt ab 23:59:00 bis 00:00:00
+      const isEpic = (now.getMonth() === 11 && now.getDate() === 31 && now.getHours() === 23 && now.getMinutes() === 59) ||
+                     (now.getMonth() === 0 && now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0 && now.getSeconds() < 10);
+      const isFinal = isEpic && now.getSeconds() >= 50;
+      timeElem.classList.toggle('epic-time', isEpic && !isFinal);
+      timeElem.classList.toggle('epic-final', isFinal);
+      if (!isEpic && !isFinal) {
+        timeElem.classList.remove('epic-time','epic-final');
+      }
+    }
+    setInterval(updateTime, 500);
+    updateTime();
+
+    // RAM, CPU, IP jede Sekunde
+    async function updateStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('cpu_temp').textContent = data.cpu_temp !== null ? data.cpu_temp + '°C' : '-';
+        // RAM Usage künstlich übertreiben
+        let ramBase = data.ram_use;
+        let ramExtra = 2 + Math.random() * 6; // 2-8% drauf
+        let ramFake = Math.min(100, Math.round(ramBase + ramExtra + (Math.random()-0.5)*2)); // kleine Schwankung
+        document.getElementById('ram_use').textContent = ramFake + '%';
+        // RAM-Balken animieren
+        let ramBar = document.querySelector('.ram-bar');
+        if (ramBar) ramBar.style.width = ramFake + '%';
+        document.getElementById('ip').textContent = data.ip;
+        document.getElementById('uptime').textContent = data.uptime || '-';
+      } catch (e) {}
+    }
+    setInterval(updateStatus, 1000);
+    updateStatus();
+
+    // Wetter alle 5 Minuten
+    async function updateWeather() {
+      try {
+        const res = await fetch('/api/weather');
+        const data = await res.json();
+        document.getElementById('temp_now').textContent = (data.temp_now !== null ? (Math.round(data.temp_now * 10) / 10) + '°C' : '-');
+        document.getElementById('weather_now').textContent = data.weather_now || '-';
+        // Wetter-Icon anzeigen
+        const iconElem = document.getElementById('weather_icon');
+        if (data.icon) {
+          iconElem.src = `https://openweathermap.org/img/wn/${data.icon}@2x.png`;
+          iconElem.style.display = '';
+        } else {
+          iconElem.style.display = 'none';
+        }
+      } catch (e) {}
+    }
+    setInterval(updateWeather, 600000);
+    updateWeather();
+
+    // Open-Meteo Wettercode zu Icon
+    function getWeatherIcon(code) {
+      // Einfache Zuordnung, kann erweitert werden
+      if ([0].includes(code)) return '☀️'; // Klar
+      if ([1,2,3].includes(code)) return '🌤️'; // Teilweise bewölkt
+      if ([45,48].includes(code)) return '🌫️'; // Nebel
+      if ([51,53,55,56,57].includes(code)) return '🌦️'; // Nieselregen
+      if ([61,63,65,80,81,82].includes(code)) return '🌧️'; // Regen
+      if ([71,73,75,77,85,86].includes(code)) return '❄️'; // Schnee
+      if ([95,96,99].includes(code)) return '⛈️'; // Gewitter
+      return '❔';
+    }
+
+    async function updateWeekWeather() {
+      try {
+        const res = await fetch('/api/weekweather');
+        const data = await res.json();
+        const forecastDiv = document.getElementById('weekly-forecast');
+        if (forecastDiv && data.time) {
+          forecastDiv.innerHTML = '';
+          for (let i = 0; i < data.time.length; i++) {
+            const date = new Date(data.time[i]);
+            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+            const icon = getWeatherIcon(data.weathercode[i]);
+            forecastDiv.innerHTML += `
+              <div class="forecast-day${i === 0 ? ' current' : ''}">
+                <div class="day">${dayName}</div>
+                <div class="icon" style="font-size:2rem;">${icon}</div>
+                <div class="temp">${Math.round(data.temperature_2m_max[i])}°C / ${Math.round(data.temperature_2m_min[i])}°C</div>
+              </div>
+            `;
+          }
+        }
+      } catch (e) {}
+    }
+    setInterval(updateWeekWeather, 600000);
+    updateWeekWeather();
+
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    fullscreenBtn.onclick = function() {
+      const el = document.documentElement;
+      if (!document.fullscreenElement) {
+        if (el.requestFullscreen) el.requestFullscreen();
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        else if (el.msRequestFullscreen) el.msRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.msExitFullscreen) document.msExitFullscreen();
+      }
+    };
+    function setFullscreenButtonVisibility() {
+      if (document.fullscreenElement) fullscreenBtn.classList.add('fullscreen-hide');
+      else fullscreenBtn.classList.remove('fullscreen-hide');
+    }
+    document.addEventListener('fullscreenchange', setFullscreenButtonVisibility);
+    setFullscreenButtonVisibility();
+
+    // --- REALISTIC MEGA FIREWORKS & CONFETTI ---
+    function launchRealisticFirework() {
+      const overlay = document.getElementById('fireworks-overlay');
+      const w = window.innerWidth, h = window.innerHeight;
+      // Feuerwerksexplosionen
+      for (let i = 0; i < 8 + Math.random()*8; i++) {
+        const x = Math.random() * w * 0.8 + w * 0.1;
+        const y = Math.random() * h * 0.5 + h * 0.1;
+        const color = ["#39ff14","#fff","#0ff","#f0f","#ff0","#f00","#0f0","#00f"][Math.floor(Math.random()*8)];
+        const size = 8 + Math.random()*16;
+        for (let j = 0; j < 18 + Math.random()*8; j++) {
+          const angle = (j / (18 + Math.random()*8)) * 2 * Math.PI;
+          const dist = 80 + Math.random()*80;
+          const dx = Math.cos(angle) * dist;
+          const dy = Math.sin(angle) * dist;
+          const fw = document.createElement('div');
+          fw.className = 'firework';
+          fw.style.left = `${x}px`;
+          fw.style.top = `${y}px`;
+          fw.style.width = fw.style.height = `${size}px`;
+          fw.style.background = color;
+          fw.style.boxShadow = `0 0 24px ${color}, 0 0 48px #fff`;
+          fw.style.opacity = 0.85 + Math.random()*0.15;
+          fw.animate([
+            { transform: 'scale(1) translate(0,0)', opacity: 1 },
+            { transform: `scale(${1.5+Math.random()}) translate(${dx}px,${dy}px)`, opacity: 0 }
+          ], { duration: 1200+Math.random()*600, fill: 'forwards' });
+          overlay.appendChild(fw);
+          setTimeout(() => fw.remove(), 1800);
+        }
+      }
+      // Konfetti
+      for (let k = 0; k < 120; k++) {
+        const conf = document.createElement('div');
+        conf.className = 'firework';
+        conf.style.left = `${Math.random()*w}px`;
+        conf.style.top = `-10px`;
+        conf.style.width = `${8+Math.random()*8}px`;
+        conf.style.height = `${8+Math.random()*8}px`;
+        const color = ["#39ff14","#fff","#0ff","#f0f","#ff0","#f00","#0f0","#00f"][k%8];
+        conf.style.background = color;
+        conf.style.boxShadow = `0 0 12px ${color}`;
+        conf.animate([
+          { transform: 'scale(1) translate(0,0)', opacity: 1 },
+          { transform: `scale(1) translate(${(Math.random()-0.5)*200}px,${h+60}px) rotate(${Math.random()*720}deg)`, opacity: 0.7 }
+        ], { duration: 2200+Math.random()*1800, fill: 'forwards' });
+        overlay.appendChild(conf);
+        setTimeout(() => conf.remove(), 3200);
+      }
+    }
+    let realFireworksTimer = null;
+    function startRealisticFireworks(durationMs) {
+      const overlay = document.getElementById('fireworks-overlay');
+      overlay.style.display = '';
+      if (realFireworksTimer) clearTimeout(realFireworksTimer);
+      let running = true;
+      function loop() {
+        if (!running) return;
+        launchRealisticFirework();
+        realFireworksTimer = setTimeout(loop, 400 + Math.random()*400);
+      }
+      loop();
+      realFireworksTimer = setTimeout(() => {
+        running = false;
+        overlay.style.display = 'none';
+      }, durationMs);
+    }
+
+    // --- COUNTDOWN & SIMULATION ---
+    let countdownActive = false;
+    let simulatedNow = null;
+    function showCountdown(seconds, simulateTime) {
+      countdownActive = true;
+      const overlay = document.getElementById('countdown-overlay');
+      overlay.style.display = '';
+      overlay.innerHTML = `<div style='position:absolute;top:40%;left:0;width:100vw;font-size:5rem;color:#39ff14;font-family:VT323,monospace;text-shadow:0 0 24px #39ff14,0 0 8px #fff;'>00:01:00</div>`;
+      let t = seconds;
+      function update() {
+        if (!countdownActive) return;
+        const min = String(Math.floor(t/60)).padStart(2,'0');
+        const sec = String(t%60).padStart(2,'0');
+        overlay.innerHTML = `<div style='position:absolute;top:40%;left:0;width:100vw;font-size:5rem;color:#39ff14;font-family:VT323,monospace;text-shadow:0 0 24px #39ff14,0 0 8px #fff;'>00:${min}:${sec}</div>`;
+        if (simulateTime) {
+          // Simulierte Zeit für Ticker und andere Komponenten
+          simulatedNow = new Date();
+          simulatedNow.setHours(23,59-t,60-t*0,0);
+        }
+        if (t === 0) {
+          overlay.innerHTML = `<div style='position:absolute;top:40%;left:0;width:100vw;font-size:5rem;color:#39ff14;font-family:VT323,monospace;text-shadow:0 0 24px #39ff14,0 0 8px #fff;'>HAPPY NEW YEAR!</div>`;
+          setTimeout(()=>{ overlay.style.display='none'; countdownActive=false; simulatedNow=null; }, 4000);
+          startRealisticFireworks(90000);
+        } else {
+          t--;
+          setTimeout(update, 1000);
+        }
+      }
+      update();
+    }
+
+    // --- SPECIAL TICKER FOR NEW YEAR ---
+    let originalTickerMessages = null;
+    function setSpecialTicker() {
+      if (!window.tickerMessages) return;
+      if (!originalTickerMessages) originalTickerMessages = [...window.tickerMessages];
+      window.tickerMessages = [
+        "Happy New Year! 🎉",
+        "Wishing you a retro-tastic year!",
+        "May your code be bug-free in the new year!",
+        "2026 is loading...",
+        "New year, new pixels!",
+        "All systems go for 2026!",
+        "Cheers to a year of creativity and code!",
+        "May your RAM never overflow in 2026!",
+        "Keep scrolling into the new year!",
+        "Retro fireworks for a retro year!"
+      ];
+    }
+    function resetTicker() {
+      if (originalTickerMessages) window.tickerMessages = [...originalTickerMessages];
+    }
+
+    // --- NEUJAHRSZEREMONIE ---
+    function startNewYearCeremony(simulate) {
+      setSpecialTicker();
+      showCountdown(60, simulate);
+      setTimeout(()=>{
+        resetTicker();
+      }, 100*1000);
+    }
+
+    // Automatischer Ablauf: 1 Minute vor Neujahr
+    function checkNewYearCeremony() {
+      if (simulatedNow) return; // Simulation läuft
+      const now = new Date();
+      if (now.getMonth() === 11 && now.getDate() === 31 && now.getHours() === 23 && now.getMinutes() === 59 && !window._ceremonyActive) {
+        window._ceremonyActive = true;
+        startNewYearCeremony(false);
+      }
+      // Reset nach 00:16 Uhr
+      if (now.getMonth() === 0 && now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() > 15) {
+        window._ceremonyActive = false;
+      }
+    }
+    setInterval(checkNewYearCeremony, 10000);
+    checkNewYearCeremony();
+
+    // Manuell: Alt+Q+F = komplette Zeremonie (Simulation)
+    document.addEventListener('keydown', function(e) {
+      if (e.altKey && (e.key==='q'||e.key==='Q')) window._qPressed = true;
+      if (e.altKey && (e.key==='f'||e.key==='F') && window._qPressed) {
+        startNewYearCeremony(true);
+        window._qPressed = false;
+      }
+    });
+    document.addEventListener('keyup', function(e) {
+      if (e.key==='q'||e.key==='Q') window._qPressed = false;
+    });
+  </script>
+</body>
+</html>
