@@ -9,8 +9,20 @@ import flask
 from flask import Flask, render_template, request, jsonify
 import threading
 import time
+from livereload import Server
 
 app = Flask(__name__)
+# Browser-Caching für Static-Files (CSS, JS) deaktivieren
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    return response
+
 
 
 # Basisinfos
@@ -152,4 +164,8 @@ def api_weekweather():
     return jsonify({'error': 'no data'})
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    server = Server(app.wsgi_app)
+    server.watch('main.py')
+    server.watch('templates/')
+    server.watch('static/')
+    server.serve(port=5000, host='0.0.0.0', debug=True)
